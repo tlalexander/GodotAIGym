@@ -8,7 +8,7 @@
 #include <cstddef>
 #include <cassert>
 #include <utility>
-#include <platform/x11/os_x11.h>
+#include <platform/linuxbsd/os_linuxbsd.h>
 // #include <platform/x11_shared/x11_shared.h>
 
 using namespace boost::interprocess;
@@ -17,8 +17,8 @@ typedef std::string MyType;
 
 cSharedMemory::cSharedMemory(){
 	//Obtain segment_name value
-	OS_X11 *os = reinterpret_cast<OS_X11*>(OS::get_singleton());
-	
+	OS_LinuxBSD *os = reinterpret_cast<OS_LinuxBSD*>(OS::get_singleton());
+
 	found = false;
 	std::wstring arg_s;
 	for(List<String>::Element *E=os->get_cmdline_args().front(); E; E=E->next()) {
@@ -32,16 +32,16 @@ cSharedMemory::cSharedMemory(){
 			print_line(String("Shared memory handle found:") + E->get() + String(":") + E->next()->get());
 		}
 	}
-	
+
 	if(!found)return;
-	
+
 	try{
 		segment = new managed_shared_memory(open_only, segment_name->c_str());
 	}catch (boost::interprocess::interprocess_exception &e){
 		std::cout<<boost::diagnostic_information(e)<<std::endl;
 		shared_memory_object::remove(segment_name->c_str());
 	}
-	
+
 };
 
 cSharedMemory::~cSharedMemory(){
@@ -54,11 +54,11 @@ bool cSharedMemory::exists(){
 	return found;
 }
 
-PoolVector<int> cSharedMemory::getIntArray(const String &name){
+Vector<int> cSharedMemory::getIntArray(const String &name){
 	std::wstring ws = name.c_str();
 	std::string s_name( ws.begin(), ws.end() );
-	
-	PoolVector<int> data;
+
+	Vector<int> data;
 	try{
 		IntVector *shared_vector = segment->find<IntVector> (s_name.c_str()).first;
 		for(int i=0; i<shared_vector->size(); i++){
@@ -75,11 +75,11 @@ PoolVector<int> cSharedMemory::getIntArray(const String &name){
 	return data;
 }
 
-PoolVector<float> cSharedMemory::getFloatArray(const String &name){
+Vector<float> cSharedMemory::getFloatArray(const String &name){
 	std::wstring ws = name.c_str();
 	std::string s_name( ws.begin(), ws.end() );
-	
-	PoolVector<float> data;
+
+	Vector<float> data;
 	try{
 		FloatVector *shared_vector = segment->find<FloatVector> (s_name.c_str()).first;
 		for(int i=0; i<shared_vector->size(); i++){
@@ -96,7 +96,7 @@ PoolVector<float> cSharedMemory::getFloatArray(const String &name){
 	return data;
 }
 
-void cSharedMemory::sendIntArray(const String &name, const PoolVector<int> &array){
+void cSharedMemory::sendIntArray(const String &name, const Vector<int> &array){
 	std::wstring ws = name.c_str();
 	std::string s_name( ws.begin(), ws.end() );
 	try{
@@ -112,7 +112,7 @@ void cSharedMemory::sendIntArray(const String &name, const PoolVector<int> &arra
     }
 }
 
-void cSharedMemory::sendFloatArray(const String &name, const PoolVector<float> &array){
+void cSharedMemory::sendFloatArray(const String &name, const Vector<float> &array){
 	std::wstring ws = name.c_str();
 	std::string s_name( ws.begin(), ws.end() );
 	try{

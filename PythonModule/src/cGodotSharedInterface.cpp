@@ -16,7 +16,7 @@ cSharedMemoryTensor::~cSharedMemoryTensor(){
     delete segment_name;
 }
 
-void cSharedMemoryTensor::sendInt(const std::string &name, torch::Tensor T){
+bool cSharedMemoryTensor::sendInt(const std::string &name, torch::Tensor T){
     CHECK_CPU_INPUT_TYPE(T, torch::kInt);
     if(T.ndimension() != 1){
         ERROR("Number of dimensions should be 1");
@@ -27,16 +27,23 @@ void cSharedMemoryTensor::sendInt(const std::string &name, torch::Tensor T){
     try{
         const ShmemAllocatorInt alloc_inst (segment->get_segment_manager());
         IntVector *myvector = segment->construct<IntVector>(name.c_str())(alloc_inst);
-        myvector->resize(T.size(0));
-        myvector->assign(T.data<int>(), T.data<int>() + T.size(0));
+        if (myvector)
+        {
+          myvector->resize(T.size(0));
+          myvector->assign(T.data<int>(), T.data<int>() + T.size(0));
+          return true;
+        }
     }catch(interprocess_exception &ex){
         std::cout<<name<<":"<<ex.what()<<std::endl;
+        std::cout<<name<<":"<<ex.get_native_error()<<std::endl;
+        std::cout<<"sendInt"<<std::endl;
     }catch(std::exception &ex){
         std::cout<<ex.what()<<std::endl;
     }
+    return false;
 }
 
-void cSharedMemoryTensor::sendFloat(const std::string &name, torch::Tensor T){
+bool cSharedMemoryTensor::sendFloat(const std::string &name, torch::Tensor T){
     CHECK_CPU_INPUT_TYPE(T, torch::kFloat);
     if(T.ndimension() != 1){
         ERROR("Number of dimensions should be 1");
@@ -47,28 +54,51 @@ void cSharedMemoryTensor::sendFloat(const std::string &name, torch::Tensor T){
     try{
         const ShmemAllocatorFloat alloc_inst (segment->get_segment_manager());
         FloatVector *myvector = segment->construct<FloatVector>(name.c_str())(alloc_inst);
-        myvector->resize(T.size(0));
-        myvector->assign(T.data<float>(), T.data<float>() + T.size(0));
+        if (myvector)
+        {
+          myvector->resize(T.size(0));
+          myvector->assign(T.data<float>(), T.data<float>() + T.size(0));
+          return true;
+        }
     }catch(interprocess_exception &ex){
         std::cout<<name<<":"<<ex.what()<<std::endl;
+        std::cout<<name<<":"<<ex.get_native_error()<<std::endl;
+        std::cout<<"sendFloat"<<std::endl;
     }catch(std::exception &ex){
         std::cout<<ex.what()<<std::endl;
     }
+    return false;
 }
 
 torch::Tensor cSharedMemoryTensor::receiveInt(const std::string &name){
     torch::Tensor T;
     try{
+      //  std::cout<<"BBB receiveInt1"<<std::endl;
+        //std::pair<IntVector*, std::size_t> p = segment->find<IntVector> (name.c_str());
         IntVector *myvector = segment->find<IntVector> (name.c_str()).first;
-        T = torch::zeros(myvector->size(), torch::TensorOptions().dtype(torch::kInt).device(torch::kCPU));
-        for(int i=0; i<myvector->size(); i++){
-            T[i] = (*myvector)[i];
-        }
+        if (myvector)
+        {
+          //IntVector *myvector = p.first;
+            std::cout<<"receiveInt2"<<std::endl;
+            int this_size = myvector->size();
+          //  int this_size = p.second;
+            std::cout<<"receiveInt2.5"<<std::endl;
+        T = torch::zeros(this_size, torch::TensorOptions().dtype(torch::kInt).device(torch::kCPU));
+            std::cout<<"receiveInt3"<<std::endl;
+        // for(int i=0; i<myvector->size(); i++){
+      for(int i=0; i<this_size; i++){
+               T[i] = (*myvector)[i];
+              //T[i] = (*p.first)[i];
+          }
         segment->destroy<IntVector>(name.c_str());
+        }
+
     }catch(interprocess_exception &ex){
+  //  std::cout<<"receiveInt5"<<std::endl;
         std::cout<<name<<":"<<ex.what()<<std::endl;
     }catch(std::exception &ex){
-        std::cout<<ex.what()<<std::endl;
+    std::cout<<"receiveInt6"<<std::endl;
+    std::cout<<ex.what()<<std::endl;
     }
     return T;
 }
@@ -77,13 +107,18 @@ torch::Tensor cSharedMemoryTensor::receiveFloat(const std::string &name){
     torch::Tensor T;
     try{
         FloatVector *myvector = segment->find<FloatVector> (name.c_str()).first;
-        T = torch::zeros(myvector->size(), torch::TensorOptions().dtype(torch::kFloat).device(torch::kCPU));
-        for(int i=0; i<myvector->size(); i++){
-            T[i] = (*myvector)[i];
+        if (myvector)
+        {
+          T = torch::zeros(myvector->size(), torch::TensorOptions().dtype(torch::kFloat).device(torch::kCPU));
+          for(int i=0; i<myvector->size(); i++){
+              T[i] = (*myvector)[i];
+          }
+
+          segment->destroy<FloatVector>(name.c_str());
         }
-        segment->destroy<FloatVector>(name.c_str());
     }catch(interprocess_exception &ex){
         std::cout<<name<<":"<<ex.what()<<std::endl;
+        std::cout<<"receiveFloat"<<std::endl;
     }catch(std::exception &ex){
         std::cout<<ex.what()<<std::endl;
     }
@@ -93,11 +128,13 @@ torch::Tensor cSharedMemoryTensor::receiveFloat(const std::string &name){
 cSharedMemorySemaphore::cSharedMemorySemaphore(const std::string &sem_name, int init_count){
     try{
         name = new std::string(sem_name);
+        std::cout<<"creating shared memory semaphore "<<*name<<std::endl;
         shared_memory_object object(open_or_create, name->c_str(), read_write);
         object.truncate(sizeof(interprocess_semaphore));
         region = new mapped_region(object, read_write);
         void *addr = region->get_address();
         mutex = new (addr) interprocess_semaphore(init_count);
+        std::cout<<"did create shared memory semaphore "<<*name<<std::endl;
     }catch(interprocess_exception &ex){
         std::cout<<sem_name<<":"<<ex.what()<<std::endl;
     }catch(std::exception &ex){
@@ -113,27 +150,29 @@ cSharedMemorySemaphore::~cSharedMemorySemaphore(){
 }
 
 void cSharedMemorySemaphore::post(){
-    // std::cout<<"Post semaphore "<<*name<<std::endl;
+  //  std::cout<<"start Post semaphore "<<*name<<std::endl;
     try{
         //Important: if the mutex is not cast here, it will give segfault
         mutex = static_cast<interprocess_semaphore*>(region->get_address());
         mutex->post();
     }catch(boost::interprocess::interprocess_exception &ex){
+        std::cout<<"EXCEPTION IN post semaphore "<<*name<<std::endl;
         std::cout<<*name<<":"<<ex.what()<<std::endl;
     }catch(std::exception &ex){
         std::cout<<ex.what()<<std::endl;
     }
-    // std::cout<<"Posted semaphore "<<*name<<std::endl;
+  //  std::cout<<"finished post semaphore "<<*name<<std::endl;
 }
 void cSharedMemorySemaphore::wait(){
-    // std::cout<<"wait semaphore "<<*name<<std::endl;
+  //  std::cout<<"start wait semaphore "<<*name<<std::endl;
     try{
         mutex = static_cast<interprocess_semaphore*>(region->get_address());
         mutex->wait();
     }catch(boost::interprocess::interprocess_exception &ex){
+        std::cout<<"EXCEPTION IN wait semaphore "<<*name<<std::endl;
         std::cout<<*name<<":"<<ex.what()<<std::endl;
     }catch(std::exception &ex){
         std::cout<<ex.what()<<std::endl;
     }
-    // std::cout<<"wait semaphore "<<*name<<std::endl;
+  //  std::cout<<"finish wait semaphore "<<*name<<std::endl;
 }

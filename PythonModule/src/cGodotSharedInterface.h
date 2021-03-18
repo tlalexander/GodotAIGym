@@ -28,12 +28,12 @@ class cSharedMemoryTensor{
         shared_memory_object *object = NULL;
 
     public:
-        
+
         cSharedMemoryTensor(const std::string &name);
         ~cSharedMemoryTensor();
 
-        void sendInt(const std::string &name, torch::Tensor T);
-        void sendFloat(const std::string &name, torch::Tensor T);
+        bool sendInt(const std::string &name, torch::Tensor T);
+        bool sendFloat(const std::string &name, torch::Tensor T);
         torch::Tensor receiveInt(const std::string &name);
         torch::Tensor receiveFloat(const std::string &name);
 };
